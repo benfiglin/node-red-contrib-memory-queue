@@ -61,7 +61,7 @@ test('MemoryQueueConfig (in-memory): emits first message and locks until ack', a
   assert.equal(r1.ok, true);
   assert.equal(q._locked, true);
   assert.equal(q._length(), 1);
-  assert.deepEqual(pushed[0], { n: 1 });
+  assert.deepEqual(pushed[0], { n: 1, _memqueue: { resendCount: 0 } });
 
   // pushing second should not emit because still locked
   await q.push({ n: 2 });
@@ -70,7 +70,7 @@ test('MemoryQueueConfig (in-memory): emits first message and locks until ack', a
   await q.emitNext(true); // ack
   assert.equal(q._length(), 1);
   assert.equal(q._locked, true);
-  assert.deepEqual(pushed[1], { n: 2 });
+  assert.deepEqual(pushed[1], { n: 2, _memqueue: { resendCount: 0 } });
 });
 
 test('MemoryQueueConfig (in-memory): reject when full', async () => {
@@ -104,7 +104,7 @@ test('MemoryQueueConfig (in-memory): discard_newest when full (silently drops in
   assert.equal(r2.ok, true);
   assert.equal(r2.action, 'discarded_newest');
   assert.equal(q._length(), 1);
-  assert.deepEqual(pushed[0], { n: 1 });
+  assert.deepEqual(pushed[0], { n: 1, _memqueue: { resendCount: 0 } });
 });
 
 test('MemoryQueueConfig (in-memory): discard_oldest while locked does not drop in-flight head', async () => {
@@ -120,7 +120,7 @@ test('MemoryQueueConfig (in-memory): discard_oldest while locked does not drop i
 
   // Currently locked with head=1, queue=[1,2]
   assert.equal(q._locked, true);
-  assert.deepEqual(pushed[0], { n: 1 });
+  assert.deepEqual(pushed[0], { n: 1, _memqueue: { resendCount: 0 } });
 
   // Push 3 when full: should drop oldest (1). Because it was locked,
   // it should re-emit current head (2) after dropping.
@@ -133,8 +133,29 @@ test('MemoryQueueConfig (in-memory): discard_oldest while locked does not drop i
   assert.deepEqual(q._peek(), { n: 1 });
 
   await q.emitNext(true); // ack 1
-  assert.deepEqual(pushed[1], { n: 3 });
+  assert.deepEqual(pushed[1], { n: 3, _memqueue: { resendCount: 0 } });
   assert.deepEqual(q._peek(), { n: 3 });
+});
+
+test('MemoryQueueConfig (in-memory): resend increments resendCount on the in-flight head', async () => {
+  const { RED, registered } = makeRED();
+  require('../src/memoryQueue')(RED);
+  const MemoryQueue = registered['memory-queue'];
+
+  const q = new MemoryQueue({ name: 'q', size: 10, discard: false, onFull: 'reject' });
+  const pushed = capturePublishes(q.onPush);
+
+  await q.push({ n: 1 });
+  await q.push({ n: 2 });
+
+  await q.emitNext(false, { resend: true });
+  assert.deepEqual(pushed[1], { n: 1, _memqueue: { resendCount: 1 } });
+
+  await q.emitNext(false, { resend: true });
+  assert.deepEqual(pushed[2], { n: 1, _memqueue: { resendCount: 2 } });
+
+  await q.emitNext(true); // ack 1, move to 2
+  assert.deepEqual(pushed[3], { n: 2, _memqueue: { resendCount: 0 } });
 });
 
 test('MemoryQueueConfig (in-memory): discard_oldest when size=1 and locked rejects', async () => {
