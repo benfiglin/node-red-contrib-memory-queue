@@ -38,6 +38,9 @@ module.exports = function(RED) {
       this._data = [];
       this._locked = false;
 
+      this._inFlightMsg = null;
+      this._inFlightResendCount = 0;
+
       const node = this;
       const userDir = (RED.settings && RED.settings.userDir) ? RED.settings.userDir : process.cwd();
       const baseDir = (node.dir && String(node.dir).trim().length > 0) ? node.dir : path.join(userDir, 'memory-queue');
@@ -133,7 +136,7 @@ module.exports = function(RED) {
         return { ok: true, action: 'enqueued' };
       }
 
-      node.emitNext = async function (acked = false) {
+      node.emitNext = async function (acked = false, opts = null) {
         await node._ready;
 
         if (acked) {
@@ -147,7 +150,25 @@ module.exports = function(RED) {
         node._locked = false;
         if (node._length() > 0) {
           node._locked = true;
-          node.onPush.publish(node._peek());
+          const head = node._peek();
+
+          if (head !== node._inFlightMsg) {
+            node._inFlightMsg = head;
+            node._inFlightResendCount = 0;
+          } else if (opts && opts.resend === true) {
+            node._inFlightResendCount += 1;
+          }
+
+          const emitted = RED.util.cloneMessage(head);
+          const existingMeta = (emitted && emitted._memqueue && typeof emitted._memqueue === 'object') ? emitted._memqueue : {};
+          emitted._memqueue = {
+            ...existingMeta,
+            resendCount: node._inFlightResendCount,
+          };
+          node.onPush.publish(emitted);
+        } else {
+          node._inFlightMsg = null;
+          node._inFlightResendCount = 0;
         }
 
         node.onStatusChange.publish(node._length());
@@ -287,7 +308,7 @@ module.exports = function(RED) {
 
     node.on('input', async function(msg, send, done) {
       try {
-        await queue.emitNext(false);
+        await queue.emitNext(false, { resend: true });
         if (typeof done === 'function') done();
       } catch (err) {
         if (typeof done === 'function') done(err);
