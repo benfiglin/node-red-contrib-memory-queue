@@ -6,6 +6,12 @@
         name: { value: '', required: true },
         size: { value: null, required: false },
         discard: { value: false, required: false },
+        onFull: { value: 'reject', required: false },
+        emitOnStart: { value: true, required: false },
+        persistent: { value: false, required: false },
+        dir: { value: '', required: false },
+        durability: { value: 'balanced', required: false },
+        flushIntervalMs: { value: 2000, required: false },
       },
       label: function() {
           return this.name;
@@ -14,6 +20,31 @@
         $("#node-config-input-size").typedInput({
           type:'num'
         })
+
+        $("#node-config-input-flushIntervalMs").typedInput({
+          type:'num'
+        })
+
+        const updatePersistentFields = function () {
+          const enabled = $("#node-config-input-persistent").prop('checked');
+          $(".memqueue-persistent").toggle(enabled);
+        }
+
+        $("#node-config-input-persistent").on('change', updatePersistentFields);
+
+        if (!this.onFull) {
+          this.onFull = this.discard ? 'discard_oldest' : 'reject'
+        }
+
+        if (!this.durability) {
+          this.durability = 'balanced'
+        }
+
+        if (typeof this.emitOnStart !== 'boolean') {
+          this.emitOnStart = true
+        }
+
+        updatePersistentFields();
       }
   });
 
@@ -30,9 +61,36 @@
     <input type="text" id="node-config-input-size">
   </div>
   <div class="form-row">
-    <label for="node-config-input-discard"><i class="fa fa-rotate-left"></i> Discard Oldest</label>
-    <input type="checkbox" id="node-config-input-discard" style="display:inline-block; width:auto; vertical-align:top;">
-</div>
+    <label for="node-config-input-onFull"><i class="fa fa-tasks"></i> On Full</label>
+    <select id="node-config-input-onFull">
+      <option value="reject">Reject New</option>
+      <option value="discard_oldest">Discard Oldest</option>
+      <option value="discard_newest">Discard Newest</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-emitOnStart"><i class="fa fa-play"></i> Emit head on start</label>
+    <input type="checkbox" id="node-config-input-emitOnStart" style="display:inline-block; width:auto; vertical-align:top;">
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-persistent"><i class="fa fa-save"></i> Persistent</label>
+    <input type="checkbox" id="node-config-input-persistent" style="display:inline-block; width:auto; vertical-align:top;">
+  </div>
+  <div class="form-row memqueue-persistent">
+    <label for="node-config-input-dir"><i class="fa fa-folder-open"></i> Directory</label>
+    <input type="text" id="node-config-input-dir" placeholder="(default: under Node-RED userDir)">
+  </div>
+  <div class="form-row memqueue-persistent">
+    <label for="node-config-input-durability"><i class="fa fa-shield"></i> Durability</label>
+    <select id="node-config-input-durability">
+      <option value="balanced">Balanced</option>
+      <option value="strict">Strict</option>
+    </select>
+  </div>
+  <div class="form-row memqueue-persistent">
+    <label for="node-config-input-flushIntervalMs"><i class="fa fa-clock-o"></i> Flush Interval (ms)</label>
+    <input type="text" id="node-config-input-flushIntervalMs">
+  </div>
   </script>
 
 <!-- queue in -->
@@ -141,6 +199,35 @@
 </script>
 
 <script type="text/x-red" data-template-name="memqueue resend">
+  <div class="form-row">
+      <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+      <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Queue</label>
+    <input type="text" id="node-input-queue" placeholder="Queue">
+  </div>
+</script>
+
+<!-- queue clear -->
+<script type="text/javascript">
+  RED.nodes.registerType('memqueue clear',{
+      category: 'queue',
+      color: '#E6E6E6',
+      defaults: {
+          name: {value: ''},
+          queue: {value: '', type: 'memory-queue', required: true},
+      },
+      inputs: 1,
+      outputs: 0,
+      icon: "font-awesome/fa-trash",
+      label: function() {
+          return this.name || "queue clear";
+      }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="memqueue clear">
   <div class="form-row">
       <label for="node-input-name"><i class="icon-tag"></i> Name</label>
       <input type="text" id="node-input-name" placeholder="Name">
